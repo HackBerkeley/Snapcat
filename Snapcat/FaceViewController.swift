@@ -70,7 +70,7 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
         let context = CIContext()
         let detector = CIDetector(ofType: CIDetectorTypeFace, context: context, options: [
             CIDetectorTracking: true,
-            CIDetectorNumberOfAngles: 7
+            CIDetectorNumberOfAngles: 5
             ])!
         
         return (context, detector)

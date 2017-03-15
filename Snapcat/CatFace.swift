@@ -74,7 +74,9 @@ class CatFace {
     */
     static let faces = [
         CatFace(name: "Test"),
-        CatFace(name: "Whiskers")
+        CatFace(name: "Whiskers"),
+        CatFace(name: "Big Eyes"),
+        CatFace(name: "Fish")
     ]
 }
 
