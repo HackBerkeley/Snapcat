@@ -9,66 +9,84 @@
 import UIKit
 import AVFoundation
 
-class FaceLayer : CALayer {
-    
-    override init() {
-        super.init()
-        
-        addSublayer(mouth)
-        addSublayer(leftEye)
-        addSublayer(rightEye)
-    }
-    
-    required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    func set(filter : CatFilter) {
-    
-        contents = filter.features[.face]?.cgImage
-        mouth.contents = filter.features[.mouth]?.cgImage
-        leftEye.contents = filter.features[.leftEye]?.cgImage
-        rightEye.contents = filter.features[.rightEye]?.cgImage
-    }
-    
-    let mouth = CALayer()
-    let leftEye = CALayer()
-    let rightEye = CALayer()
-    
-    func process(feature: CIFaceFeature) {
-        bounds = feature.bounds
-    }
-    
-}
+/**
+ The FaceViewController runs the scene in our app where the aciton happens.
+ It's reponsibilities include:
+ - Setting up the camera
+ - Detecting faces
+ - Moving the images that compose the CatFace
+ 
+ Since it is a view controller, it subclasses UIViewController.
+ FaceViewController adopts the AVCaptureVideoDataOutputSampleBufferDelegate (https://developer.apple.com/reference/avfoundation/avcapturevideodataoutputsamplebufferdelegate) protocol since it needs to recieve video buffers.
+ 
+ The view heirarchy of FaceViewController is as follows:
+ 
+                  view
+                    |
+                view.layer
+                    |
+                faceMaskLayer
+                    |
+                featureLayers
+ */
 
 class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
     
-    var filter : CatFilter! {
+    private let (faceMaskLayer, featureLayers) : (CALayer, [CatFace.FeatureType : CALayer]) = {
+        
+        let faceLayer = CALayer()
+        
+        var result : [CatFace.FeatureType : CALayer] = [:]
+        
+        for feature in [CatFace.FeatureType.mouth, .leftEye, .rightEye] {
+            let featureLayer = CALayer()
+            result[feature] = featureLayer
+            faceLayer.addSublayer(featureLayer) //Add each feature to as a child of the face mask. This way, each feature layer will move with the face mask.
+        }
+        
+        return (faceLayer, result)
+    }()
+    
+    /**
+     We're showing one CatFace filter.
+     
+     When it's changed ('didSet') we should change the contents of the faceMaskLayer, as well as any face feature layers.
+    */
+    var catFace : CatFace! {
         didSet {
-            faceLayer.contents = filter.features[.face]?.cgImage
-            mouthLayer.contents = filter.features[.mouth]?.cgImage
-            leftEyeLayer.contents = filter.features[.leftEye]?.cgImage
-            rightEyeLayer.contents = filter.features[.rightEye]?.cgImage
+            faceMaskLayer.contents = catFace.faceMaskImage.cgImage!
+            
+            for (feature, image) in catFace.featureImages {
+                featureLayers[feature]!.contents = image.cgImage!
+            }
         }
     }
     
-    
-    let (context, detector) : (CIContext, CIDetector) = {
+    /**
+     Here we initialize the gpuContext, which managed all our computations (rotation, findingFaces) on the GPU.
+     We're also going to create the CIDetector (https://developer.apple.com/reference/coreimage/cidetector) that's going to find faces.
+    */
+    private let (gpuContext, faceDetector) : (CIContext, CIDetector) = {
         let context = CIContext()
         let detector = CIDetector(ofType: CIDetectorTypeFace, context: context, options: [
             CIDetectorTracking: true,
-            CIDetectorNumberOfAngles: 5
+            CIDetectorNumberOfAngles: 7
             ])!
         
         return (context, detector)
     }()
     
-    //We need the output so we can set ourselves as delegate after
-    lazy var session : AVCaptureSession = {
+    /**
+     This is the 'capture session' that represent's our app's use of the camera hardware.
+     We're going to initialize it in a 'lazy var' since it needs to use `self` and `let` declarations need to be initialized with self, which would lead to a dependency loop.
+    */
+    private lazy var session : AVCaptureSession = {
         //Get the front facing camera
         let device = AVCaptureDevice.defaultDevice(withDeviceType: .builtInWideAngleCamera, mediaType: AVMediaTypeVideo, position: .front)!
         let input = try! AVCaptureDeviceInput(device: device)
         
+        //Set up an ouptut so we can get data from the camera
+        //We 'delegate' ourselves as the 'delegate' to this output, so we recieve data in the captureOutput method.
         let output = AVCaptureVideoDataOutput()
         output.setSampleBufferDelegate(self, queue: .main)
         
@@ -80,168 +98,194 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
         return result
     }()
     
-    let faceLayer = CALayer()
-    let mouthLayer = CALayer()
-    let leftEyeLayer = CALayer()
-    let rightEyeLayer = CALayer()
-    
+    /**
+     This method is called by UIKit when the view is first loaded from the storyboard.
+     Traditionally, we set up views here.
+     The only thing that needs to happen is adding the faceMaskLayer to the view's given layer.
+    */
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        
-        view.layer.addSublayer(faceLayer)
-        
-        faceLayer.addSublayer(mouthLayer)
-        faceLayer.addSublayer(leftEyeLayer)
+        view.layer.addSublayer(faceMaskLayer)
     }
     
+    /**
+     This method gets called by UIKit when our view appears to the user, for example when we select an entry from our previous table view and it gets pushed to the screen.
+     We'll start running the whole video capture session here.
+    */
     override func viewDidAppear(_ animated: Bool) {
         session.startRunning()
     }
     
+    /**
+     Likewise, this is called when the user navigates away from the view, or the app closes.
+     We should pause the video capture session, so it doesn't use system resources uneccessarily.
+    */
     override func viewWillDisappear(_ animated: Bool) {
         session.stopRunning()
     }
     
-    private let transformFilter = CIFilter(name: "CIAffineTransform")!
+    /**
+     This function moves around our layers (faceMaskLayer, featureLayers) based on a face feature.
+     It uses a transformation (CGAffineTransform) to move from coordinates in the camera image to coordinates in the user interace.
+     */
+    private func moveFaceLayers(basedOn faceFeature: CIFaceFeature, transformFromDetectorToUI uiTransform: CGAffineTransform) {
+        
+        //Get the bounds from the face feature, and then convert them from coordinates in the image from the camera to coordinates in the user interface
+        let faceRect = faceFeature.bounds.applying(uiTransform)
+        
+        //Move the faceMaskLayer to this location
+        faceMaskLayer.frame = faceRect
+        
+        //If the faceFeature has a face rotation angle, rotate the face mask by that amount.
+        if faceFeature.hasFaceAngle {
+            
+            /*
+                The CIFaceFeature gives us an angle in degrees (for some reason), so we should convert it to radians.
+             
+                radians = (degress / 360) * 2π
+            */
+            let rotateRadians = (CGFloat(faceFeature.faceAngle) / 360) * (2 * CGFloat(M_PI))
+            
+            faceMaskLayer.transform = CATransform3DMakeRotation(rotateRadians, 0, 1, 1)
+        } else {
+            //Otherwise don't rotate at all. This is an 'identity' transform.
+            faceMaskLayer.transform = CATransform3DIdentity
+        }
+        
+        for (feature, layer) in featureLayers {
+            //For each face feature, see if it was detected in the image.
+            if let positionInImage = faceFeature.getFeaturePosition(feature: feature) {
+                
+                //If the feature was found, we should make it visible
+                layer.opacity = 1
+                
+                //We should transform the feature's position in the image to one in the user interface
+                let positionInUI = positionInImage.applying(uiTransform)
+                
+                //We also need to convert the position in the UI into a position in the faceMaskLayer, since the feature layer is a child of the faceMaskLayer
+                let positionInFaceLayer = view.layer.convert(positionInUI, to: faceMaskLayer)
+                
+                //The detector doesn't tell us the size of the face feature, so we should get the proportion of the graphic from the CatFace
+                let sizeProportion = catFace.featureProportion(feature: feature)
+                
+                //We're going to make the layer's size proportional to its parent faceMaskLayer. We'll set the position in the next line.
+                layer.frame = {
+                    var frame = faceMaskLayer.frame
+                    
+                    frame.size.height *= sizeProportion.height
+                    frame.size.width *= sizeProportion.width
+                    
+                    return frame
+                }()
+                
+                //Finally, move the layer to the correct position
+                layer.position = positionInFaceLayer
+                
+            } else {
+                //If the feature wasn't found, make it invisible
+                layer.opacity = 0
+            }
+        }
+    }
     
+    
+    /**
+     The we've told the AVCaptureVideoDataOutput to call this method when it has a new buffer ready (`output.setSampleBufferDelegate(self, queue: .main)` in session setup)
+    */
     func captureOutput(_ captureOutput: AVCaptureOutput!, didOutputSampleBuffer sampleBuffer: CMSampleBuffer!, from connection: AVCaptureConnection!) {
         
+        //Get the video part of the buffer. Sometimes this might have audio, but not today
         let pixelBuffer : CVImageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)!
         
+        //Transfer the image to the GPU
         let image = CIImage(cvImageBuffer: pixelBuffer)
         
-        /*
-         The image comes in landscape, and not flipped so it looks weird and un-mirror-like.
-         
-         We need to rotate the image 90º clockwise, and flip it.
-         
-         The comment below each transform operation shows the transformation state after said operation.
-         w = the original width of the image
-         h = the original height of the image
-         */
+        //The image comes in in landscape and not mirrored. Rotate and flip it. See Utilities.swift
+        let rotated = rotateImageFromCamera(image: image)
         
-        var transform = CGAffineTransform.identity
+        //Render the image back so we can display it in view.layer
+        let cgImage = gpuContext.createCGImage(rotated, from: rotated.extent)
         
-        /*
-          _____ (w,h)
-         |     |
-         |_____|
-         (0,0)
-         
-         */
+        //We begin a CATransaction, or an interaction with CALayers by changing their properties
+        //The changes only get committed on CATransaction.commit()
+        CATransaction.begin()
+        //There's a 0.25 second animation by default. Let's turn that off. Mess with this number to see different animation durations
+        CATransaction.setAnimationDuration(0)
         
-        transform = transform.translatedBy(x: image.extent.height, y: image.extent.width)
-        
-        /*
-          _____ (h+w,w+h)
-         |     |
-         |_____|
-         (h,w)
-         x
-         (0,0)
-         */
-        
-        transform = transform.rotated(by: -CGFloat(M_PI_2))
-        
-        /*
-          ____(h+h,w)
-         |    |
-         |    |
-         |____|
-         (h,0)
-         */
-        
-        //We're going to mirror the image so it looks like a ...mirror
-        transform = transform.scaledBy(x: 1, y: -1)
-        
-        /*
-         ____ (h,w)
-         |    |
-         |    |
-         |____|
-         (0,0)
-         */
-        
-        transformFilter.setValue(NSValue(cgAffineTransform: transform), forKey: "inputTransform")
-        
-        //first, rotate the image because it comes in landscape
-        transformFilter.setValue(image, forKey: "inputImage")
-        
-        let rotated = transformFilter.value(forKey: "outputImage") as! CIImage
-        
-        let cgImage = context.createCGImage(rotated, from: rotated.extent)
-        
+        //Display the image from the camera
         view.layer.contents = cgImage
         
         //find faces in the image
-        let features = detector.features(in: rotated)
+        let features = faceDetector.features(in: rotated)
         
-        let uiTransform = CGAffineTransform(translationX: 0, y: view.layer.frame.height).scaledBy(x: view.layer.frame.width/rotated.extent.width, y: -view.layer.frame.height/rotated.extent.height)
-        
-        //only handle one feature
+        //only handle the features if there's on or more face.
         if features.count > 0 {
+            
+            //get only the first face. We can explicitly cast since the CIDetector promised us CIFaceFeatures
             let faceFeature = features[0] as! CIFaceFeature
             
-            let faceRect = faceFeature.bounds.applying(uiTransform)
+            /*
+            This is transform from the image to the UI. First, we transform by the UI
+            When I refer to the UI, I generally mean view.layer
             
-            faceLayer.opacity = 1
+            img.w = Camera Image With
+            img.h = Camera Image Height
+         
+            ui.w = view.layer.frame.width
+            ui.h = view.layer.frame.height
+             
+             The pictures represent the state of the transform after the previous line executes.
+             The letters in the image identify each corner.
+            */
             
-            faceLayer.frame = faceRect
+            var uiTransform = CGAffineTransform.identity
             
-            if faceFeature.hasFaceAngle {
-                
-                let rotateRadians = (CGFloat(faceFeature.faceAngle) / 360) * (2 * CGFloat(M_PI))
-                
-                faceLayer.transform = CATransform3DMakeRotation(rotateRadians, 0, 1, 1)
-            } else {
-                faceLayer.transform = CATransform3DIdentity
-            }
+            /*
+             .
+             .
+             .____(img.w, img.h)
+             |a  b|
+             |    |
+             |    |
+             |c__d|.......
+             (0,0)
+            */
             
-            //if we have the mouth
-            if faceFeature.hasMouthPosition {
-                mouthLayer.opacity = 1
-                
-                //set the mouth's position as the mouth position translated to ui space then translated into facelayer space
-                
-                let position = view.layer.convert(faceFeature.mouthPosition.applying(uiTransform), to: faceLayer)
-                
-                var frame = faceLayer.frame
-                
-                frame.size.width *= 0.5
-                frame.size.height *= 0.2
-                
-                mouthLayer.frame = frame
-                
-                mouthLayer.position = position
-                
-                
-            } else {
-                mouthLayer.opacity = 0
-            }
+            uiTransform = uiTransform.translatedBy(x: 0, y: view.layer.frame.height)
             
-            //if we have the left eye
-            if faceFeature.hasLeftEyePosition {
-                leftEyeLayer.opacity = 1
-                
-                let position = view.layer.convert(faceFeature.leftEyePosition.applying(uiTransform), to: faceLayer)
-                
-                var frame = faceLayer.frame
-                
-                frame.size.width *= 0.2
-                frame.size.height *= 0.2
-                
-                leftEyeLayer.frame = frame
-                
-                leftEyeLayer.position = position
-            } else {
-                leftEyeLayer.opacity = 0
-            }
-
+            /*
+             .____ (img.w, img.h + ui.h)
+             |a  b|
+             |    |
+             |    |
+             |c__d|
+             .(0, ui.h)
+             .................
+             */
+            
+            uiTransform = uiTransform.scaledBy(x: view.layer.frame.width/rotated.extent.width, y: -view.layer.frame.height/rotated.extent.height)
+            
+            /*
+             .
+             .__ (ui.w, ui.h)
+             |cd|
+             |ab|........
+             (0,0)
+            */
+            
+            //If there's a face, show the face mask.
+            faceMaskLayer.opacity = 1
+            
+            //See the above function. Moves the layers into position
+            moveFaceLayers(basedOn: faceFeature, transformFromDetectorToUI: uiTransform)
             
         } else {
-            faceLayer.opacity = 0
+            //If there are no faces dete
+            faceMaskLayer.opacity = 0
         }
+        
+        CATransaction.commit()
     }
 
 }
