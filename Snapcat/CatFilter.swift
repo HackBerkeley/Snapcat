@@ -16,11 +16,18 @@ func transformFromRect(from: CGRect, toRect to: CGRect) -> CGAffineTransform {
     return transform.scaledBy(x: to.width/from.width, y: to.height/from.height)
 }
 
-extension CGAffineTransform {
-    mutating func rotateAroundCenter(byRadians angle: CGFloat, resultantSize) {
-        self = self.translatedBy(x: faceFeature.bounds.width / 2, y: faceFeature.bounds.height / 2)
-        self = self.rotated(by: angle)
-        self = self.translatedBy(x: -faceFeature.bounds.width / 2, y: -faceFeature.bounds.height / 2)
+extension CGRect {
+    func centered(at center: CGPoint, scaledBy scaled: CGSize) -> CGRect {
+        var result = self
+        
+        result.size.width *= scaled.width
+        result.size.height *= scaled.height
+        
+        result.origin.x = center.x - (result.width / 2)
+        result.origin.y = center.y - (result.height / 2)
+        
+        return result
+        
     }
 }
 
@@ -67,16 +74,22 @@ class CatFilter {
         CIDetectorNumberOfAngles: 5
         ])!
     
-    func transform(image: CIImage, fromRect: CGRect, toRect: CGRect, rotateBy angle: CGFloat, scaleBy scale: CGSize) -> CIImage {
-        var transform = transformFromRect(from: fromRect, toRect: toRect)
+    func transform(featureImage: CIImage, toBounds bounds: CGRect, rotation: CGFloat?) -> CIImage {
+        var transform = transformFromRect(from: featureImage.extent, toRect: bounds)
         
-        transform = transform.translatedBy(x: toRect.width / 2, y: toRect.height / 2)
-        transform = transform.rotated(by: angle)
-        transform = transform.scaledBy(x: scale.width, y: scale.height)
-        transform = transform.translatedBy(x: -toRect.width / 2, y: -toRect.height / 2)
+        if let rotation = rotation {
+            transform = transform.translatedBy(x: bounds.width / 2, y: bounds.height / 2)
+            
+            let rotationRadians = (CGFloat(rotation) / 360) * CGFloat(2 * M_PI)
+            
+            transform = transform.rotated(by: -rotationRadians)
+            transform = transform.translatedBy(x: -bounds.width / 2, y: -bounds.height / 2)
+        }
         
+        //we should transform the image to the bounds, by scaling it
         transformFilter.setValue(NSValue(cgAffineTransform: transform), forKey: "inputTransform")
-        transformFilter.setValue(image, forKey: "inputImage")
+        
+        transformFilter.setValue(featureImage, forKey: "inputImage")
         
         return transformFilter.outputImage!
     }
@@ -146,6 +159,13 @@ class CatFilter {
         
         var withFeatures = rotated
         
+        func compositeFeature(image: CIImage) {
+            compositeFilter.setValue(withFeatures, forKey: "inputBackgroundImage")
+            compositeFilter.setValue(image, forKey: "inputImage")
+            
+            withFeatures = compositeFilter.value(forKey: "outputImage") as! CIImage
+        }
+        
         //in the rotate image, find features
         for feature in faceRecognizer.features(in: rotated) {
             switch feature.type {
@@ -156,28 +176,34 @@ class CatFilter {
                 //if we have a image for the face bounds, draw it
                 if let boundsImage = features[.face] {
                     
-                    var transform = transformFromRect(from: boundsImage.extent, toRect: faceFeature.bounds)
+                    let transformed = self.transform(featureImage: boundsImage, toBounds: faceFeature.bounds, rotation: faceFeature.hasFaceAngle ? CGFloat(faceFeature.faceAngle) : nil)
                     
-                    if faceFeature.hasFaceAngle {
-                        transform = transform.translatedBy(x: faceFeature.bounds.width / 2, y: faceFeature.bounds.height / 2)
-                        
-                        let rotationRadians = (CGFloat(faceFeature.faceAngle) / 360) * CGFloat(2 * M_PI)
-                        
-                        transform = transform.rotated(by: -rotationRadians)
-                        transform = transform.translatedBy(x: -faceFeature.bounds.width / 2, y: -faceFeature.bounds.height / 2)
-                    }
+                    compositeFeature(image: transformed)
                     
-                    //we should transform the image to the bounds, by scaling it
-                    transformFilter.setValue(NSValue(cgAffineTransform: transform), forKey: "inputTransform")
-                    
-                    transformFilter.setValue(boundsImage, forKey: "inputImage")
-                    
-                    //composite the image onto rotate
-                    compositeFilter.setValue(withFeatures, forKey: "inputBackgroundImage")
-                    compositeFilter.setValue(transformFilter.value(forKey: "outputImage"), forKey: "inputImage")
-                    
-                    withFeatures = compositeFilter.value(forKey: "outputImage") as! CIImage
                 }
+                
+                //if we have a mouth image, draw it as well
+                if let mouthImage = features[.mouth], faceFeature.hasMouthPosition {
+                    
+                    let mouthBounds = faceFeature.bounds.centered(at: faceFeature.mouthPosition, scaledBy: CGSize(width: 0.5, height: 0.2))
+                    
+                    let transformed = self.transform(featureImage: mouthImage, toBounds: mouthBounds, rotation: faceFeature.hasFaceAngle ? CGFloat(faceFeature.faceAngle) : nil)
+                    
+                    compositeFeature(image: transformed)
+                    
+                }
+                
+                //if we have a mouth image, draw it as well
+                if let leftEyeImage = features[.leftEye], faceFeature.hasLeftEyePosition {
+                    
+                    let leftEyeBounds = faceFeature.bounds.centered(at: faceFeature.leftEyePosition, scaledBy: CGSize(width: 0.2, height: 0.2))
+                    
+                    let transformed = self.transform(featureImage: leftEyeImage, toBounds: leftEyeBounds, rotation: faceFeature.hasFaceAngle ? CGFloat(faceFeature.faceAngle) : nil)
+                    
+                    compositeFeature(image: transformed)
+                    
+                }
+                
             default:
                 break
             }
