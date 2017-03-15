@@ -73,7 +73,8 @@ class CatFace {
      'static' means it's a member of the class, rather than any instance of the class.
     */
     static let faces = [
-        CatFace(name: "Test")
+        CatFace(name: "Test"),
+        CatFace(name: "Whiskers")
     ]
 }
 
