@@ -42,17 +42,15 @@ class CatFilter {
         case rightEye = "RightEye"
     }
     
-    let features : [Feature : CIImage]
+    let features : [Feature : UIImage]
     
     init(name: String) {
         
-        var features = [Feature : CIImage]()
+        var features = [Feature : UIImage]()
         
         //If any of these image loads fails, the entry in the dictionary is simply not set.
         for feature in [Feature.face, .mouth, .leftEye, .rightEye] {
-            if let image = UIImage(named: name + feature.rawValue) {
-                features[feature] = CIImage(image: image)
-            }
+            features[feature] =  UIImage(named: name + feature.rawValue)
         }
         
         self.features = features
@@ -92,131 +90,6 @@ class CatFilter {
         transformFilter.setValue(featureImage, forKey: "inputImage")
         
         return transformFilter.outputImage!
-    }
-    
-    func apply(toImage pixelBuffer: CVImageBuffer) -> UIImage {
-        
-        let image = CIImage(cvImageBuffer: pixelBuffer)
-        
-        /*
-         The image comes in landscape, and not flipped so it looks weird and un-mirror-like.
-         
-         We need to rotate the image 90º clockwise, and flip it.
-         
-         The comment below each transform operation shows the transformation state after said operation.
-         w = the original width of the image
-         h = the original height of the image
-        */
-        
-        var transform = CGAffineTransform.identity
-        
-        /*
-          _____ (w,h)
-         |     |
-         |_____|
-    (0,0)
-         
-         */
-        
-        transform = transform.translatedBy(x: image.extent.height, y: image.extent.width)
-         
-         /*
-              _____ (h+w,w+h)
-             |     |
-             |_____|
-           (h,w)
-         x
-     (0,0)
-        */
-        
-        transform = transform.rotated(by: -CGFloat(M_PI_2))
-        
-         /*
-                  ____(h+h,w)
-                 |    |
-                 |    |
-                 |____|
-            (h,0)
-         */
-        
-        //We're going to mirror the image so it looks like a ...mirror
-        transform = transform.scaledBy(x: 1, y: -1)
-        
-        /*
-          ____ (h,w)
-         |    |
-         |    |
-         |____|
-     (0,0)
-         */
-        
-        transformFilter.setValue(NSValue(cgAffineTransform: transform), forKey: "inputTransform")
-        
-        //first, rotate the image because it comes in landscape
-        transformFilter.setValue(image, forKey: "inputImage")
-        
-        let rotated = transformFilter.value(forKey: "outputImage") as! CIImage
-        
-        var withFeatures = rotated
-        
-        func compositeFeature(image: CIImage) {
-            compositeFilter.setValue(withFeatures, forKey: "inputBackgroundImage")
-            compositeFilter.setValue(image, forKey: "inputImage")
-            
-            withFeatures = compositeFilter.value(forKey: "outputImage") as! CIImage
-        }
-        
-        //in the rotate image, find features
-        for feature in faceRecognizer.features(in: rotated) {
-            switch feature.type {
-            case CIFeatureTypeFace:
-                
-                let faceFeature = feature as! CIFaceFeature
-                
-                //if we have a image for the face bounds, draw it
-                if let boundsImage = features[.face] {
-                    
-                    let transformed = self.transform(featureImage: boundsImage, toBounds: faceFeature.bounds, rotation: faceFeature.hasFaceAngle ? CGFloat(faceFeature.faceAngle) : nil)
-                    
-                    compositeFeature(image: transformed)
-                    
-                }
-                
-                //if we have a mouth image, draw it as well
-                if let mouthImage = features[.mouth], faceFeature.hasMouthPosition {
-                    
-                    let mouthBounds = faceFeature.bounds.centered(at: faceFeature.mouthPosition, scaledBy: CGSize(width: 0.5, height: 0.2))
-                    
-                    let transformed = self.transform(featureImage: mouthImage, toBounds: mouthBounds, rotation: faceFeature.hasFaceAngle ? CGFloat(faceFeature.faceAngle) : nil)
-                    
-                    compositeFeature(image: transformed)
-                    
-                }
-                
-                //if we have a mouth image, draw it as well
-                if let leftEyeImage = features[.leftEye], faceFeature.hasLeftEyePosition {
-                    
-                    let leftEyeBounds = faceFeature.bounds.centered(at: faceFeature.leftEyePosition, scaledBy: CGSize(width: 0.2, height: 0.2))
-                    
-                    let transformed = self.transform(featureImage: leftEyeImage, toBounds: leftEyeBounds, rotation: faceFeature.hasFaceAngle ? CGFloat(faceFeature.faceAngle) : nil)
-                    
-                    compositeFeature(image: transformed)
-                    
-                }
-                
-            default:
-                break
-            }
-        }
-        
-        //always crop the result to the original image size
-        let vector = CIVector(cgRect: rotated.extent)
-        cropFilter.setValue(vector, forKey: "inputRectangle")
-        cropFilter.setValue(withFeatures, forKey: "inputImage")
-        
-        let cropped = cropFilter.value(forKey: "outputImage") as! CIImage
-        
-        return UIImage(ciImage: cropped)
     }
 }
 
