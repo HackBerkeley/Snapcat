@@ -32,3 +32,9 @@ campanile.position = CGPoint(x: rootLayer.bounds.midX, y: rootLayer.bounds.midY)
 
 //We can rotate a layer by applying a "transform"
 campanile.transform = CATransform3DMakeRotation(CGFloat(M_PI_2), 0, 0, 1)
+
+//If we add a sublayer to the campinile it's going to respect its transform
+let sublayer = CALayer()
+sublayer.frame = CGRect(x: 0, y: 0, width: 50, height: 50)
+sublayer.backgroundColor = UIColor.red.cgColor
+campanile.addSublayer(sublayer)
