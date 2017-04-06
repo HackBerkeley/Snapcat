@@ -32,35 +32,21 @@ import AVFoundation
 
 class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
     
-    private let (faceMaskLayer, featureLayers) : (CALayer, [CatFace.FeatureType : CALayer]) = {
-        
-        //TODO: Impement me!
-        
-    }()
+    //TODO: Add all the face element layers
     
     /**
      We're showing one CatFace filter.
      
      When it's changed ('didSet') we should change the contents of the faceMaskLayer, as well as any face feature layers.
     */
-    var catFace : CatFace! {
-        didSet {
-            
-            //TODO: Implement me!
-            
-        }
-    }
+    //TODO: Implement this
     
     /**
      Here we initialize the gpuContext, which managed all our computations (rotation, findingFaces) on the GPU.
      We're also going to create the CIDetector (https://developer.apple.com/reference/coreimage/cidetector) that's going to find faces.
     */
-    private let (gpuContext, faceDetector) : (CIContext, CIDetector) = {
-        let context = CIContext()
-        let detector = //TODO: Make the detector
-        
-        return (context, detector)
-    }()
+    //TODO: Add the CIDetector to find faces
+    private let gpuContext = CIContext()
     
     /**
      This is the 'capture session' that represent's our app's use of the camera hardware.
@@ -121,23 +107,20 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
         let faceRect = faceFeature.bounds.applying(uiTransform)
         
         //Move the faceMaskLayer to this location
-        faceMaskLayer.frame = faceRect
+        //TODO
         
         //If the faceFeature has a face rotation angle, rotate the face mask by that amount.
-        if faceFeature.hasFaceAngle {
+        //Otherwise, just pass an identity transform with no rotation
+        let rotationTrasnformation : CATransform3D = {
+            if faceFeature.hasFaceAngle {
+                //The CIFaceFeature gives us an angle in degrees (for some reason), so we should convert it to radians.
+                return CATransform3DMakeRotation(CGFloat(faceFeature.faceAngle.toRadians), 0, 1, 1)
+            } else {
+                return CATransform3DIdentity
+            }
+        }()
             
-            /*
-                The CIFaceFeature gives us an angle in degrees (for some reason), so we should convert it to radians.
-             
-                radians = (degress / 360) * 2π
-            */
-            let rotateRadians = (CGFloat(faceFeature.faceAngle) / 360) * (2 * CGFloat(M_PI))
-            
-            faceMaskLayer.transform = CATransform3DMakeRotation(rotateRadians, 0, 1, 1)
-        } else {
-            //Otherwise don't rotate at all. This is an 'identity' transform.
-            faceMaskLayer.transform = CATransform3DIdentity
-        }
+        //TODO: Rotate the face mask
         
         for (feature, layer) in featureLayers {
             //For each face feature, see if it was detected in the image.
@@ -156,14 +139,7 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
                 let sizeProportion = catFace.featureProportion(feature: feature)
                 
                 //We're going to make the layer's size proportional to its parent faceMaskLayer. We'll set the position in the next line.
-                layer.frame = {
-                    var frame = faceMaskLayer.frame
-                    
-                    frame.size.height *= sizeProportion.height
-                    frame.size.width *= sizeProportion.width
-                    
-                    return frame
-                }()
+                layer.frame = faceMaskLayer.scaledSize(by: sizeProportion)
                 
                 //Finally, move the layer to the correct position
                 layer.position = positionInFaceLayer
@@ -257,25 +233,12 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
         //Display the image from the camera
         view.layer.contents = cgImage
         
-        //find faces in the image
-        let features = faceDetector.features(in: rotated)
-        
-        //only handle the features if there's on or more face.
-        if features.count > 0 {
-            
-            //get only the first face. We can explicitly cast since the CIDetector promised us CIFaceFeatures
-            let faceFeature = features[0] as! CIFaceFeature
-            
-            //If there's a face, show the face mask.
-            faceMaskLayer.opacity = 1
-            
-            //See the above function. Moves the layers into position
-            moveFaceLayers(basedOn: faceFeature, transformFromDetectorToUI: uiTransform)
-            
-        } else {
-            //If there are no faces dete
-            faceMaskLayer.opacity = 0
-        }
+        /*
+         TODO:
+         
+         - get the face features from the image
+         - if there are faces, make our layers visible and move them (moveFaceLayers), otherwise, make them invisible
+        */
         
         CATransaction.commit()
     }

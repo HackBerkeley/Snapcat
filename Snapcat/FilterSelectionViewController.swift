@@ -26,7 +26,8 @@ class FilterSelectionViewController : UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0:
-            return CatFace.faces.count //There are going to be the same number of cells as faces.
+            //TODO: Return the number of faces.
+            return 3
         default:
             fatalError() //There's only one section, so we shouldn't ever have to handle anything except index 0.
         }
@@ -45,7 +46,9 @@ class FilterSelectionViewController : UITableViewController {
         case 0:
             
             let result = UITableViewCell(style: .default, reuseIdentifier: nil)
-            result.textLabel!.text = CatFace.faces[indexPath.row].name
+            
+            //TODO: Set the label's text to the name of the filter.
+            result.textLabel!.text = "No name"
             
             return result
             
@@ -68,7 +71,7 @@ class FilterSelectionViewController : UITableViewController {
      */
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         
-        faceViewController.catFace = CatFace.faces[indexPath.row]
+        //TODO: Give the face view controller the selected CatFace
         
         navigationController!.pushViewController(faceViewController, animated: true)
     }
