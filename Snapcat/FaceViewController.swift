@@ -122,33 +122,16 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
             
         //TODO: Rotate the face mask
         
-        for (feature, layer) in featureLayers {
-            //For each face feature, see if it was detected in the image.
-            if let positionInImage = faceFeature.getFeaturePosition(feature: feature) {
-                
-                //If the feature was found, we should make it visible
-                layer.opacity = 1
-                
-                //We should transform the feature's position in the image to one in the user interface
-                let positionInUI = positionInImage.applying(uiTransform)
-                
-                //We also need to convert the position in the UI into a position in the faceMaskLayer, since the feature layer is a child of the faceMaskLayer
-                let positionInFaceLayer = view.layer.convert(positionInUI, to: faceMaskLayer)
-                
-                //The detector doesn't tell us the size of the face feature, so we should get the proportion of the graphic from the CatFace
-                let sizeProportion = catFace.featureProportion(feature: feature)
-                
-                //We're going to make the layer's size proportional to its parent faceMaskLayer. We'll set the position in the next line.
-                layer.frame = faceMaskLayer.scaledSize(by: sizeProportion)
-                
-                //Finally, move the layer to the correct position
-                layer.position = positionInFaceLayer
-                
-            } else {
-                //If the feature wasn't found, make it invisible
-                layer.opacity = 0
-            }
-        }
+        /*
+         TODO: Iterate through all the sub-features, and their layers
+         
+         - see if that feature was detected in the face, if it was we have a positiion
+            - if it was, make it visible
+            - move the sub-layer to that positiion
+            - scale the sub-layer to be proportional to the face layer
+         - otherwise make invisible
+        */
+        
     }
     
     func transformToView(from image: CIImage) -> CGAffineTransform {

@@ -22,22 +22,6 @@ import UIKit
  */
 extension CIFaceFeature {
     
-    func getFeaturePosition(feature: CatFace.FeatureType) -> CGPoint? {
-        switch feature {
-        case .mouth:
-            if hasMouthPosition {
-                return mouthPosition
-            }
-        case .leftEye:
-            if hasLeftEyePosition {
-                return leftEyePosition
-            }
-        case .rightEye:
-            if hasRightEyePosition {
-                return rightEyePosition
-            }
-        }
-        return nil
-    }
+    //TODO: Implement this
     
 }
