@@ -138,20 +138,17 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
         faceMaskLayer.frame = faceRect
         
         //If the faceFeature has a face rotation angle, rotate the face mask by that amount.
-        if faceFeature.hasFaceAngle {
+        //Otherwise, just pass an identity transform with no rotation
+        let rotationTrasnformation : CATransform3D = {
+            if faceFeature.hasFaceAngle {
+                //The CIFaceFeature gives us an angle in degrees (for some reason), so we should convert it to radians.
+                return CATransform3DMakeRotation(CGFloat(faceFeature.faceAngle.toRadians), 0, 1, 1)
+            } else {
+                return CATransform3DIdentity
+            }
+        }()
             
-            /*
-                The CIFaceFeature gives us an angle in degrees (for some reason), so we should convert it to radians.
-             
-                radians = (degress / 360) * 2π
-            */
-            let rotateRadians = (CGFloat(faceFeature.faceAngle) / 360) * (2 * CGFloat(M_PI))
-            
-            faceMaskLayer.transform = CATransform3DMakeRotation(rotateRadians, 0, 1, 1)
-        } else {
-            //Otherwise don't rotate at all. This is an 'identity' transform.
-            faceMaskLayer.transform = CATransform3DIdentity
-        }
+        faceMaskLayer.transform = rotationTrasnformation
         
         for (feature, layer) in featureLayers {
             //For each face feature, see if it was detected in the image.
@@ -170,14 +167,7 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
                 let sizeProportion = catFace.featureProportion(feature: feature)
                 
                 //We're going to make the layer's size proportional to its parent faceMaskLayer. We'll set the position in the next line.
-                layer.frame = {
-                    var frame = faceMaskLayer.frame
-                    
-                    frame.size.height *= sizeProportion.height
-                    frame.size.width *= sizeProportion.width
-                    
-                    return frame
-                }()
+                layer.frame = faceMaskLayer.frame.scaledSize(by: sizeProportion)
                 
                 //Finally, move the layer to the correct position
                 layer.position = positionInFaceLayer

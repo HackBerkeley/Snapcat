@@ -95,3 +95,23 @@ extension CGSize {
         return CGSize(width: lhs.width/rhs.width, height: lhs.height/rhs.height)
     }
 }
+
+extension Float {
+
+    //Gets a value in degrees as radians
+    //radians = (degress / 360) * 2π
+    var toRadians : Float {
+        return (self / 360) * (2 * Float(M_PI))
+    }
+}
+
+extension CGRect {
+    func scaledSize(by size: CGSize) -> CGRect {
+        var result = self
+        
+        result.size.height *= size.height
+        result.size.width *= size.width
+        
+        return result
+    }
+}
