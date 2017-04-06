@@ -34,17 +34,8 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
     
     private let (faceMaskLayer, featureLayers) : (CALayer, [CatFace.FeatureType : CALayer]) = {
         
-        let faceLayer = CALayer()
+        //TODO: Impement me!
         
-        var result : [CatFace.FeatureType : CALayer] = [:]
-        
-        for feature in [CatFace.FeatureType.mouth, .leftEye, .rightEye] {
-            let featureLayer = CALayer()
-            result[feature] = featureLayer
-            faceLayer.addSublayer(featureLayer) //Add each feature to as a child of the face mask. This way, each feature layer will move with the face mask.
-        }
-        
-        return (faceLayer, result)
     }()
     
     /**
@@ -54,11 +45,9 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
     */
     var catFace : CatFace! {
         didSet {
-            faceMaskLayer.contents = catFace.faceMaskImage.cgImage!
             
-            for (feature, image) in catFace.featureImages {
-                featureLayers[feature]!.contents = image.cgImage!
-            }
+            //TODO: Implement me!
+            
         }
     }
     
@@ -68,10 +57,7 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
     */
     private let (gpuContext, faceDetector) : (CIContext, CIDetector) = {
         let context = CIContext()
-        let detector = CIDetector(ofType: CIDetectorTypeFace, context: context, options: [
-            CIDetectorTracking: true,
-            CIDetectorNumberOfAngles: 5
-            ])!
+        let detector = //TODO: Make the detector
         
         return (context, detector)
     }()
@@ -106,7 +92,7 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        view.layer.addSublayer(faceMaskLayer)
+        //TODO: Add the faceMask
     }
     
     /**
@@ -189,6 +175,58 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
         }
     }
     
+    func transformToView(from image: CIImage) -> CGAffineTransform {
+        /*
+         This is transform from the image to the UI. First, we transform by the UI
+         When I refer to the UI, I generally mean view.layer
+         
+         img.w = Camera Image With
+         img.h = Camera Image Height
+         
+         ui.w = view.layer.frame.width
+         ui.h = view.layer.frame.height
+         
+         The pictures represent the state of the transform after the previous line executes.
+         The letters in the image identify each corner.
+         */
+        
+        var uiTransform = CGAffineTransform.identity
+        
+        /*
+         .
+         .
+         .____(img.w, img.h)
+         |a  b|
+         |    |
+         |    |
+         |c__d|.......
+         (0,0)
+         */
+        
+        uiTransform = uiTransform.translatedBy(x: 0, y: view.layer.frame.height)
+        
+        /*
+         .____ (img.w, img.h + ui.h)
+         |a  b|
+         |    |
+         |    |
+         |c__d|
+         .(0, ui.h)
+         .................
+         */
+        
+        uiTransform = uiTransform.scaledBy(x: view.layer.frame.width/image.extent.width, y: -view.layer.frame.height/image.extent.height)
+        
+        /*
+         .
+         .__ (ui.w, ui.h)
+         |cd|
+         |ab|........
+         (0,0)
+         */
+        
+        return uiTransform
+    }
     
     /**
      The we've told the AVCaptureVideoDataOutput to call this method when it has a new buffer ready (`output.setSampleBufferDelegate(self, queue: .main)` in session setup)
@@ -207,6 +245,9 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
         //Render the image back so we can display it in view.layer
         let cgImage = gpuContext.createCGImage(rotated, from: rotated.extent)
         
+        //make a transform where we can put in a coordinate in the image and get out a coordinate in `view` on the screen
+        let uiTransform = transformToView(from: rotated)
+        
         //We begin a CATransaction, or an interaction with CALayers by changing their properties
         //The changes only get committed on CATransaction.commit()
         CATransaction.begin()
@@ -224,55 +265,6 @@ class FaceViewController: UIViewController, AVCaptureVideoDataOutputSampleBuffer
             
             //get only the first face. We can explicitly cast since the CIDetector promised us CIFaceFeatures
             let faceFeature = features[0] as! CIFaceFeature
-            
-            /*
-            This is transform from the image to the UI. First, we transform by the UI
-            When I refer to the UI, I generally mean view.layer
-            
-            img.w = Camera Image With
-            img.h = Camera Image Height
-         
-            ui.w = view.layer.frame.width
-            ui.h = view.layer.frame.height
-             
-             The pictures represent the state of the transform after the previous line executes.
-             The letters in the image identify each corner.
-            */
-            
-            var uiTransform = CGAffineTransform.identity
-            
-            /*
-             .
-             .
-             .____(img.w, img.h)
-             |a  b|
-             |    |
-             |    |
-             |c__d|.......
-             (0,0)
-            */
-            
-            uiTransform = uiTransform.translatedBy(x: 0, y: view.layer.frame.height)
-            
-            /*
-             .____ (img.w, img.h + ui.h)
-             |a  b|
-             |    |
-             |    |
-             |c__d|
-             .(0, ui.h)
-             .................
-             */
-            
-            uiTransform = uiTransform.scaledBy(x: view.layer.frame.width/rotated.extent.width, y: -view.layer.frame.height/rotated.extent.height)
-            
-            /*
-             .
-             .__ (ui.w, ui.h)
-             |cd|
-             |ab|........
-             (0,0)
-            */
             
             //If there's a face, show the face mask.
             faceMaskLayer.opacity = 1
